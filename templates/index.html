@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>WoundScan — محلل الضماد الطبي</title>
+  <link rel="manifest" href="/static/manifest.json"/>
+  <meta name="theme-color" content="#0f172a"/>
+  <link rel="stylesheet" href="/static/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- Splash screen configuration -->
+<link rel="apple-touch-startup-image" href="/static/splash.html">
+ <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/cover.png">
+  <link rel="shortcut icon" href="/static/icons/cover.ico">
+  
+
+<!-- iOS Safari meta tags -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="WoundScan">
+<link rel="apple-touch-icon" href="/static/icons/icon-192x192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/icons/icon-192x192.png">
+
+  <style>
+    /* ─── Tips Modal ─────────────────────────────────────────── */
+    .tips-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(6px);
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      animation: fadeIn 0.2s ease;
+    }
+    @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+
+    .tips-modal {
+      background: #111827;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 18px;
+      width: 100%;
+      max-width: 500px;
+      padding: 28px 28px 24px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+      animation: slideUp 0.25s ease;
+    }
+    @keyframes slideUp {
+      from { opacity:0; transform:translateY(20px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
+
+    .tips-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .tips-icon-wrap {
+      width: 52px; height: 52px;
+      background: rgba(59,130,246,0.12);
+      border: 1px solid rgba(59,130,246,0.25);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      color: #3b82f6;
+      flex-shrink: 0;
+    }
+    .tips-title {
+      font-size: 17px; font-weight: 600;
+      color: #f1f5f9;
+      margin-bottom: 2px;
+    }
+    .tips-subtitle {
+      font-size: 12.5px;
+      color: #94a3b8;
+    }
+
+    .tips-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+    .tip-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 13px;
+      background: #1a2235;
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 10px;
+      padding: 12px 14px;
+    }
+    .tip-icon {
+      width: 36px; height: 36px;
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .tip-icon-white  { background: rgba(241,245,249,0.08); color: #f1f5f9; }
+    .tip-icon-light  { background: rgba(234,179,8,0.12);   color: #eab308; }
+    .tip-icon-focus  { background: rgba(59,130,246,0.12);  color: #3b82f6; }
+    .tip-icon-center { background: rgba(34,197,94,0.12);   color: #22c55e; }
+    .tip-icon-angle  { background: rgba(168,85,247,0.12);  color: #a855f7; }
+
+    .tip-text { display: flex; flex-direction: column; gap: 2px; }
+    .tip-text strong { font-size: 13px; font-weight: 600; color: #f1f5f9; }
+    .tip-text span   { font-size: 12px; color: #94a3b8; line-height: 1.5; }
+
+    .tips-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      border-top: 1px solid rgba(255,255,255,0.07);
+      padding-top: 18px;
+    }
+    .tips-dont-show {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      cursor: pointer;
+      font-size: 12.5px;
+      color: #94a3b8;
+      user-select: none;
+    }
+    .tips-dont-show input[type="checkbox"] { display: none; }
+    .custom-checkbox {
+      width: 18px; height: 18px;
+      border: 1.5px solid rgba(255,255,255,0.2);
+      border-radius: 5px;
+      background: #1a2235;
+      display: inline-flex;
+      align-items: center; justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .tips-dont-show input:checked + .custom-checkbox {
+      background: #3b82f6;
+      border-color: #3b82f6;
+    }
+    .tips-dont-show input:checked + .custom-checkbox::after {
+      content: '';
+      width: 10px; height: 6px;
+      border-left: 2px solid white;
+      border-bottom: 2px solid white;
+      transform: rotate(-45deg) translateY(-1px);
+      display: block;
+    }
+    .tips-confirm-btn { flex-shrink: 0; }
+
+    @media (max-width: 480px) {
+      .tips-modal { padding: 20px 16px 18px; }
+      .tips-footer { flex-direction: column; align-items: stretch; }
+      .tips-confirm-btn { width: 100%; justify-content: center; }
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="app-shell">
+
+  <!-- Sidebar / Brand -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <rect width="28" height="28" rx="8" fill="#3b82f6"/>
+          <path d="M14 6v16M6 14h16" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <span class="brand-name">WoundScan</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-item active">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/>
+        </svg>
+        <span>تحليل الضماد</span>
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="disclaimer-badge">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/>
+        </svg>
+        <span>للاستخدام التشخيصي المساعد فقط</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main-content">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <h1 class="page-title">تحليل الضماد</h1>
+        <span class="page-subtitle">تحديد مستوى الالتهاب عبر تحليل اللون</span>
+      </div>
+      <div class="topbar-right">
+        <div class="status-indicator">
+          <span class="dot"></span>
+          <span>النظام متاح</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Content Grid -->
+    <div class="content-grid">
+
+      <!-- Upload Panel -->
+      <section class="panel upload-panel">
+        <div class="panel-header">
+          <h2>رفع صورة الضماد</h2>
+          <span class="panel-badge">JPEG / PNG</span>
+        </div>
+
+        <div class="upload-zone" id="uploadZone" onclick="triggerFileInput()">
+          <div class="upload-zone-inner">
+            <div class="upload-icon-wrap">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+            </div>
+            <p class="upload-label">اسحب الصورة هنا أو اضغط للتصفح</p>
+            <p class="upload-hint">الحد الأقصى 5 ميجابايت</p>
+          </div>
+          <input type="file" id="fileInput" accept="image/jpeg,image/png,image/jpg" style="display:none" onchange="handleFile(this)"/>
+        </div>
+
+        <div class="divider-text">أو</div>
+
+        <button class="btn btn-secondary" onclick="triggerCameraInput()">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+          التقاط صورة بالكاميرا
+        </button>
+
+        <input type="file" id="cameraInput" accept="image/*" capture="environment"
+               style="display:none" onchange="handleFile(this)"/>
+
+        <!-- Preview -->
+        <div id="preview-container" style="display:none;">
+          <div class="preview-header">
+            <span class="preview-label">معاينة الصورة</span>
+            <button class="preview-clear" onclick="clearImage()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+          <img id="preview" src="" alt="معاينة الصورة"/>
+        </div>
+
+        <button class="btn btn-primary" id="analyzeBtn" onclick="analyzeImage()" disabled>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+            <path d="M11 8v6M8 11h6"/>
+          </svg>
+          بدء التحليل
+        </button>
+      </section>
+
+      <!-- Results Panel -->
+      <section class="panel results-panel" id="results-panel">
+
+        <!-- Empty State -->
+        <div class="empty-state" id="emptyState">
+          <div class="empty-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+              <path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/>
+            </svg>
+          </div>
+          <p class="empty-title">لا توجد نتائج بعد</p>
+          <p class="empty-sub">ارفع صورة الضماد وابدأ التحليل</p>
+        </div>
+
+        <!-- Result Content -->
+        <div id="resultContent" style="display:none;">
+          <div class="panel-header">
+            <h2>نتيجة التحليل</h2>
+            <span class="result-timestamp" id="resultTime"></span>
+          </div>
+
+          <!-- Status Card -->
+          <div class="status-card" id="statusCard">
+            <div class="status-icon-wrap" id="statusIconWrap">
+              <div class="status-pulse"></div>
+              <span class="status-emoji" id="statusEmoji"></span>
+            </div>
+            <div class="status-info">
+              <div class="status-level" id="statusLevel"></div>
+              <div class="status-color" id="statusColor"></div>
+            </div>
+            <div class="status-ph" id="statusPh">
+              <div class="ph-value" id="phValue"></div>
+              <div class="ph-label" id="phLabel"></div>
+            </div>
+          </div>
+
+          <!-- Inflammation Meter -->
+          <div class="meter-section">
+            <div class="meter-header">
+              <span>مؤشر الالتهاب</span>
+              <span class="meter-value" id="meterValue">—</span>
+            </div>
+            <div class="meter-track">
+              <div class="meter-zones">
+                <span>سليم</span>
+                <span>ملتهب</span>
+                <span>حاد</span>
+              </div>
+              <div class="meter-bar">
+                <div class="meter-fill" id="meterFill"></div>
+                <div class="meter-needle" id="meterNeedle"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Data Grid -->
+          <div class="data-grid">
+            <div class="data-cell">
+              <div class="data-label">pH المقدر</div>
+              <div class="data-value mono" id="phRange">—</div>
+            </div>
+            <div class="data-cell">
+              <div class="data-label">اللون المكتشف</div>
+              <div class="data-value" id="colorDetected">—</div>
+            </div>
+            <div class="data-cell">
+              <div class="data-label">قيم RGB</div>
+              <div class="data-value mono small" id="rgbValues">—</div>
+            </div>
+            <div class="data-cell">
+              <div class="data-label">قيم HSV</div>
+              <div class="data-value mono small" id="hsvValues">—</div>
+            </div>
+          </div>
+
+          <!-- Recommendation -->
+          <div class="recommendation" id="recommendation">
+            <div class="recommendation-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                <polyline points="22 4 12 14.01 9 11.01"/>
+              </svg>
+            </div>
+            <p id="recommendationText"></p>
+          </div>
+        </div>
+
+      </section>
+
+    </div>
+
+    <!-- Reference Scale -->
+    <section class="reference-section">
+      <div class="reference-header">
+        <h3>مرجع سلم الألوان</h3>
+        <span>pH Scale — Color Reference</span>
+      </div>
+      <div class="color-scale">
+        <div class="scale-item scale-orange">
+          <div class="scale-swatch"></div>
+          <div class="scale-info">
+            <span class="scale-name">برتقالي</span>
+            <span class="scale-ph">pH ~5</span>
+            <span class="scale-status ok">حمضي — سليم</span>
+          </div>
+        </div>
+        <div class="scale-divider">→</div>
+        <div class="scale-item scale-light">
+          <div class="scale-swatch"></div>
+          <div class="scale-info">
+            <span class="scale-name">زيتي فاتح</span>
+            <span class="scale-ph">pH ~7</span>
+            <span class="scale-status ok">متعادل — سليم</span>
+          </div>
+        </div>
+        <div class="scale-divider">→</div>
+        <div class="scale-item scale-dark">
+          <div class="scale-swatch"></div>
+          <div class="scale-info">
+            <span class="scale-name">زيتي غامق</span>
+            <span class="scale-ph">pH ~8</span>
+            <span class="scale-status warn">قاعدي — ملتهب</span>
+          </div>
+        </div>
+        <div class="scale-divider">→</div>
+        <div class="scale-item scale-green">
+          <div class="scale-swatch"></div>
+          <div class="scale-info">
+            <span class="scale-name">أخضر داكن</span>
+            <span class="scale-ph">pH ~9</span>
+            <span class="scale-status danger">حاد — عاجل</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Install App Section (من الكود الثاني) -->
+    <section class="install-section" id="installSection" style="display:none;">
+      <div class="install-card">
+        <div class="install-icon-wrap">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+        </div>
+        <div class="install-text">
+          <strong>ثبّت التطبيق على جوالك</strong>
+          <span>استخدم WoundScan بدون متصفح — أسرع وأسهل</span>
+        </div>
+        <button class="btn btn-primary install-trigger-btn" id="installBtn" onclick="handleInstallClick()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+            <path d="M5 19h14"/>
+          </svg>
+          تنزيل التطبيق
+        </button>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ─── Tips Modal ─────────────────────────────────────────────── -->
+<div class="tips-overlay" id="tipsOverlay">
+  <div class="tips-modal">
+
+    <div class="tips-header">
+      <div class="tips-icon-wrap">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+      </div>
+      <div>
+        <div class="tips-title">تعليمات التصوير</div>
+        <div class="tips-subtitle">للحصول على نتائج دقيقة، يرجى الالتزام بما يلي</div>
+      </div>
+    </div>
+
+    <div class="tips-list">
+
+      <div class="tip-item">
+        <div class="tip-icon tip-icon-white">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
+          </svg>
+        </div>
+        <div class="tip-text">
+          <strong>خلفية بيضاء نظيفة</strong>
+          <span>ضع الضماد على ورقة بيضاء أو سطح فاتح بدون نقوش أو ألوان</span>
+        </div>
+      </div>
+
+      <div class="tip-item">
+        <div class="tip-icon tip-icon-light">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"/>
+            <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+        </div>
+        <div class="tip-text">
+          <strong>إضاءة طبيعية كافية</strong>
+          <span>صوّر في مكان مضاء جيداً — ضوء النهار أفضل، تجنب الإضاءة الصفراء أو الخافتة</span>
+        </div>
+      </div>
+
+      <div class="tip-item">
+        <div class="tip-icon tip-icon-focus">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </div>
+        <div class="tip-text">
+          <strong>صورة واضحة وغير مغبشة</strong>
+          <span>تأكد من أن الصورة في البؤرة تماماً — لا ضبابية ولا اهتزاز</span>
+        </div>
+      </div>
+
+      <div class="tip-item">
+        <div class="tip-icon tip-icon-center">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="8" y="8" width="8" height="8" rx="1"/>
+            <path d="M3 8V5a2 2 0 0 1 2-2h3M3 16v3a2 2 0 0 0 2 2h3M16 3h3a2 2 0 0 1 2 2v3M16 21h3a2 2 0 0 0 2-2v-3"/>
+          </svg>
+        </div>
+        <div class="tip-text">
+          <strong>الضماد في مركز الصورة</strong>
+          <span>احرص على أن يملأ الضماد الجزء الأكبر من الإطار ويكون في المنتصف</span>
+        </div>
+      </div>
+
+      <div class="tip-item">
+        <div class="tip-icon tip-icon-angle">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22V12M12 12L7 7M12 12l5-5"/>
+            <path d="M3 22h18"/>
+          </svg>
+        </div>
+        <div class="tip-text">
+          <strong>زاوية عمودية مباشرة</strong>
+          <span>صوّر من فوق بشكل مستقيم لأسفل — تجنب الزوايا المائلة</span>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="tips-footer">
+      <label class="tips-dont-show">
+        <input type="checkbox" id="dontShowAgain" onchange="saveTipsPreference(this.checked)"/>
+        <span class="custom-checkbox"></span>
+        <span>لا تظهر هذه التعليمات مرة أخرى</span>
+      </label>
+      <button class="btn btn-primary tips-confirm-btn" onclick="closeTipsModal()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        فهمت، ابدأ
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ─── Install Modal (من الكود الثاني) ─────────────────────────── -->
+<div class="tips-overlay" id="installOverlay" style="display:none;">
+  <div class="tips-modal" style="max-width:460px;">
+    <div class="tips-header">
+      <div class="tips-icon-wrap">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <rect x="5" y="2" width="14" height="20" rx="2"/>
+          <line x1="12" y1="18" x2="12" y2="18.01"/>
+        </svg>
+      </div>
+      <div>
+        <div class="tips-title">تثبيت التطبيق على جوالك</div>
+        <div class="tips-subtitle">اختر نوع جهازك للحصول على التعليمات</div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-bottom:20px;">
+      <button onclick="showInstallInstructions('ios')" id="iosTab"
+        style="flex:1;padding:10px;border-radius:10px;border:1.5px solid rgba(59,130,246,0.5);background:rgba(59,130,246,0.12);color:#3b82f6;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+        iPhone / iPad
+      </button>
+      <button onclick="showInstallInstructions('android')" id="androidTab"
+        style="flex:1;padding:10px;border-radius:10px;border:1.5px solid rgba(255,255,255,0.1);background:transparent;color:#94a3b8;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.523 15.341l1.046-1.812a.25.25 0 0 0-.091-.341.25.25 0 0 0-.341.091l-1.06 1.836A6.257 6.257 0 0 0 14.5 14.5H9.5c-.87 0-1.7.18-2.454.5l-1.06-1.836a.25.25 0 0 0-.432.25l1.046 1.812A6.253 6.253 0 0 0 3.5 21h17a6.253 6.253 0 0 0-2.977-5.659zM9 19.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm6 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2zM7.5 12 6 6h12l-1.5 6H7.5z"/></svg>
+        Android
+      </button>
+    </div>
+
+    <!-- iOS Instructions -->
+    <div id="iosInstructions" class="tips-list">
+      <div class="tip-item">
+        <div class="tip-icon tip-icon-focus" style="width:32px;height:32px;font-size:18px;display:flex;align-items:center;justify-content:center;">1</div>
+        <div class="tip-text">
+          <strong>افتح Safari</strong>
+          <span>تأكد أنك تستخدم متصفح Safari — لن تعمل هذه الميزة من Chrome أو Firefox</span>
+        </div>
+      </div>
+      <div class="tip-item">
+        <div class="tip-icon tip-icon-focus" style="width:32px;height:32px;font-size:18px;display:flex;align-items:center;justify-content:center;">2</div>
+        <div class="tip-text">
+          <strong>اضغط على زر المشاركة</strong>
+          <span>اضغط على أيقونة المشاركة 
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+            في أسفل الشاشة (شريط Safari)
+          </span>
+        </div>
+      </div>
+      <div class="tip-item">
+        <div class="tip-icon tip-icon-center" style="width:32px;height:32px;font-size:18px;display:flex;align-items:center;justify-content:center;">3</div>
+        <div class="tip-text">
+          <strong>اختر "إضافة إلى الشاشة الرئيسية"</strong>
+          <span>مرّر للأسفل في قائمة المشاركة واضغط "Add to Home Screen"</span>
+        </div>
+      </div>
+      <div class="tip-item">
+        <div class="tip-icon tip-icon-angle" style="width:32px;height:32px;font-size:18px;display:flex;align-items:center;justify-content:center;">4</div>
+        <div class="tip-text">
+          <strong>اضغط "إضافة"</strong>
+          <span>سيظهر التطبيق على شاشتك الرئيسية مثل أي تطبيق عادي</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Android Instructions -->
+    <div id="androidInstructions" class="tips-list" style="display:none;">
+      <div class="tip-item">
+        <div class="tip-icon tip-icon-focus" style="width:32px;height:32px;font-size:18px;display:flex;align-items:center;justify-content:center;">1</div>
+        <div class="tip-text">
+          <strong>افتح Chrome</strong>
+          <span>تأكد أنك تستخدم متصفح Chrome — هو الأفضل لتثبيت التطبيقات</span>
+        </div>
+      </div>
+      <div class="tip-item" id="androidStep2">
+        <div class="tip-icon tip-icon-focus" style="width:32px;height:32px;font-size:18px;display:flex;align-items:center;justify-content:center;">2</div>
+        <div class="tip-text">
+          <strong>اضغط على القائمة ⋮</strong>
+          <span>اضغط على النقاط الثلاث في أعلى يمين المتصفح</span>
+        </div>
+      </div>
+      <div class="tip-item">
+        <div class="tip-icon tip-icon-center" style="width:32px;height:32px;font-size:18px;display:flex;align-items:center;justify-content:center;">3</div>
+        <div class="tip-text">
+          <strong>اختر "إضافة إلى الشاشة الرئيسية"</strong>
+          <span>أو "Install App" إذا ظهر هذا الخيار مباشرة في شريط العنوان</span>
+        </div>
+      </div>
+      <div class="tip-item">
+        <div class="tip-icon tip-icon-angle" style="width:32px;height:32px;font-size:18px;display:flex;align-items:center;justify-content:center;">4</div>
+        <div class="tip-text">
+          <strong>اضغط "تثبيت"</strong>
+          <span>سيظهر التطبيق على شاشتك الرئيسية ويعمل بدون متصفح</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tips-footer">
+      <span style="font-size:12px;color:#4b5563;">يعمل بدون اتصال بعد التثبيت</span>
+      <button class="btn btn-primary tips-confirm-btn" onclick="closeInstallModal()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        فهمت
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loading">
+  <div class="loading-box">
+    <div class="loading-ring">
+      <svg width="52" height="52" viewBox="0 0 52 52">
+        <circle cx="26" cy="26" r="22" fill="none" stroke="#1e293b" stroke-width="3"/>
+        <circle cx="26" cy="26" r="22" fill="none" stroke="#3b82f6" stroke-width="3"
+          stroke-dasharray="138" stroke-dashoffset="100"
+          style="animation: spin 1.2s linear infinite; transform-origin: center;"/>
+      </svg>
+    </div>
+    <p class="loading-msg" id="loadingText">جاري المعالجة...</p>
+    <p class="loading-sub">يرجى الانتظار</p>
+  </div>
+</div>
+
+<script>
+let selectedFile = null;
+let isProcessing = false;
+let pendingAction = null; // 'file' or 'camera'
+let deferredInstallPrompt = null; // for Android native install (من الكود الثاني)
+
+// ── PWA Install Prompt (Android) ───────────────────────────── (من الكود الثاني)
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  document.getElementById('installSection').style.display = 'block';
+});
+
+// Show install section always (for iOS we need manual instructions) (من الكود الثاني)
+window.addEventListener('DOMContentLoaded', () => {
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isAndroid = /android/i.test(navigator.userAgent);
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+                    || window.navigator.standalone === true;
+  if (!isStandalone && (isIOS || isAndroid)) {
+    document.getElementById('installSection').style.display = 'block';
+    if (isIOS) showInstallInstructions('ios');
+    else showInstallInstructions('android');
+  }
+});
+
+function handleInstallClick() {
+  if (deferredInstallPrompt) {
+    // Android native prompt available
+    deferredInstallPrompt.prompt();
+    deferredInstallPrompt.userChoice.then(() => {
+      deferredInstallPrompt = null;
+    });
+  } else {
+    // Show manual instructions modal
+    document.getElementById('installOverlay').style.display = 'flex';
+  }
+}
+
+function showInstallInstructions(platform) {
+  const iosEl = document.getElementById('iosInstructions');
+  const andEl = document.getElementById('androidInstructions');
+  const iosTab = document.getElementById('iosTab');
+  const andTab = document.getElementById('androidTab');
+
+  if (platform === 'ios') {
+    iosEl.style.display = 'flex';
+    andEl.style.display = 'none';
+    iosTab.style.borderColor = 'rgba(59,130,246,0.5)';
+    iosTab.style.background = 'rgba(59,130,246,0.12)';
+    iosTab.style.color = '#3b82f6';
+    andTab.style.borderColor = 'rgba(255,255,255,0.1)';
+    andTab.style.background = 'transparent';
+    andTab.style.color = '#94a3b8';
+  } else {
+    iosEl.style.display = 'none';
+    andEl.style.display = 'flex';
+    andTab.style.borderColor = 'rgba(59,130,246,0.5)';
+    andTab.style.background = 'rgba(59,130,246,0.12)';
+    andTab.style.color = '#3b82f6';
+    iosTab.style.borderColor = 'rgba(255,255,255,0.1)';
+    iosTab.style.background = 'transparent';
+    iosTab.style.color = '#94a3b8';
+  }
+}
+
+function closeInstallModal() {
+  document.getElementById('installOverlay').style.display = 'none';
+}
+
+document.getElementById('installOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeInstallModal();
+});
+
+// ── Tips Modal Logic ──────────────────────────────────────────
+function shouldShowTips() {
+  return localStorage.getItem('woundscan_hide_tips') !== 'true';
+}
+
+function saveTipsPreference(hide) {
+  if (hide) localStorage.setItem('woundscan_hide_tips', 'true');
+  else localStorage.removeItem('woundscan_hide_tips');
+}
+
+function showTipsModal(action) {
+  pendingAction = action;
+  if (shouldShowTips()) {
+    document.getElementById('dontShowAgain').checked = false;
+    document.getElementById('tipsOverlay').style.display = 'flex';
+  } else {
+    executePendingAction();
+  }
+}
+
+function closeTipsModal() {
+  document.getElementById('tipsOverlay').style.display = 'none';
+  executePendingAction();
+}
+
+function executePendingAction() {
+  if (pendingAction === 'file')   document.getElementById('fileInput').click();
+  if (pendingAction === 'camera') document.getElementById('cameraInput').click();
+  pendingAction = null;
+}
+
+// Close on backdrop click
+document.getElementById('tipsOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeTipsModal();
+});
+
+// ── Upload Triggers ───────────────────────────────────────────
+function triggerFileInput() {
+  if (isProcessing) return;
+  showTipsModal('file');
+}
+function triggerCameraInput() {
+  if (isProcessing) return;
+  showTipsModal('camera');
+}
+
+function clearImage() {
+  selectedFile = null;
+  document.getElementById('preview-container').style.display = 'none';
+  document.getElementById('analyzeBtn').disabled = true;
+  document.getElementById('preview').src = '';
+}
+
+async function compressImage(file, maxWidth = 800, maxHeight = 800, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w > maxWidth)  { h = h * maxWidth / w;  w = maxWidth; }
+        if (h > maxHeight) { w = w * maxHeight / h; h = maxHeight; }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        canvas.toBlob((blob) => {
+          resolve(new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() }));
+        }, 'image/jpeg', quality);
+        URL.revokeObjectURL(e.target.result);
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handleFile(input) {
+  if (isProcessing) return;
+  const file = input.files[0];
+  if (!file) return;
+  isProcessing = true;
+
+  showLoading("جاري تجهيز الصورة...");
+  try {
+    let finalFile = file;
+    if (file.size > 2 * 1024 * 1024) {
+      updateLoading("جاري ضغط الصورة...");
+      finalFile = await compressImage(file);
+    }
+    selectedFile = finalFile;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      document.getElementById('preview').src = e.target.result;
+      document.getElementById('preview-container').style.display = 'block';
+      document.getElementById('analyzeBtn').disabled = false;
+      document.getElementById('resultContent').style.display = 'none';
+      document.getElementById('emptyState').style.display = 'flex';
+      hideLoading();
+    };
+    reader.readAsDataURL(finalFile);
+  } catch (e) {
+    alert("فشل في معالجة الصورة: " + e.message);
+    hideLoading();
+  } finally {
+    input.value = '';
+    isProcessing = false;
+  }
+}
+
+async function analyzeImage() {
+  if (!selectedFile || isProcessing) return;
+  isProcessing = true;
+  showLoading("جاري تحليل اللون...");
+  document.getElementById('analyzeBtn').disabled = true;
+
+  const formData = new FormData();
+  formData.append('image', selectedFile);
+
+  try {
+    const res = await fetch('/analyze', { method: 'POST', body: formData });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    showResult(data);
+  } catch (e) {
+    alert('حدث خطأ أثناء التحليل. تأكد من تشغيل السيرفر.');
+  } finally {
+    hideLoading();
+    document.getElementById('analyzeBtn').disabled = false;
+    isProcessing = false;
+  }
+}
+
+function showResult(data) {
+  document.getElementById('emptyState').style.display = 'none';
+  const rc = document.getElementById('resultContent');
+  rc.style.display = 'block';
+
+  const now = new Date();
+  document.getElementById('resultTime').textContent =
+    now.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+
+  const card = document.getElementById('statusCard');
+  card.className = `status-card status-${data.status}`;
+  document.getElementById('statusEmoji').textContent = data.emoji;
+  document.getElementById('statusLevel').textContent = data.level;
+  document.getElementById('statusColor').textContent = `اللون: ${data.color_detected}`;
+  document.getElementById('phValue').textContent = data.ph_range;
+  document.getElementById('phLabel').textContent = data.ph_label || '';
+
+  const score = data.score || 0;
+  document.getElementById('meterValue').textContent = score + '%';
+  document.getElementById('meterFill').style.width = score + '%';
+  document.getElementById('meterNeedle').style.left = score + '%';
+
+  document.getElementById('phRange').textContent = data.ph_range;
+  document.getElementById('colorDetected').textContent = data.color_detected;
+  if (data.rgb) {
+    document.getElementById('rgbValues').textContent =
+      `R:${data.rgb.r} G:${data.rgb.g} B:${data.rgb.b}`;
+  }
+  if (data.hsv) {
+    document.getElementById('hsvValues').textContent =
+      `H:${data.hsv.h}° S:${data.hsv.s}% V:${data.hsv.v}%`;
+  }
+
+  const recBox = document.getElementById('recommendation');
+  recBox.className = `recommendation rec-${data.status}`;
+  document.getElementById('recommendationText').textContent = data.recommendation;
+
+  rc.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function showLoading(msg) {
+  document.getElementById('loadingText').textContent = msg || 'جاري المعالجة...';
+  document.getElementById('loading').style.display = 'flex';
+}
+function updateLoading(msg) {
+  document.getElementById('loadingText').textContent = msg;
+}
+function hideLoading() {
+  document.getElementById('loading').style.display = 'none';
+}
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+}
+</script>
+
+</body>
+</html>
