@@ -1,12 +1,12 @@
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter
 import numpy as np
 import io
-import logging
-import cv2
-from sklearn.cluster import KMeans
+import base64
+import re
 import colorsys
+import logging
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -15,185 +15,189 @@ try:
     from pillow_heif import register_heif_opener
     register_heif_opener()
     HEIC_SUPPORT = True
+    logger.info("✅ دعم تنسيق HEIC مفعل")
 except ImportError:
     HEIC_SUPPORT = False
+    logger.warning("⚠️ تنسيق HEIC غير مدعوم")
 
 app = Flask(__name__)
 CORS(app)
 
-# تعريف الألوان بأوزان دقيقة
-COLOR_MAP = {
-    "orange": {
-        "name": "برتقالي",
-        "hsv_center": [20, 80, 70],
-        "ph": "~5.0",
-        "ph_label": "حمضي",
-        "status": "normal",
-        "level": "لا يوجد التهاب",
-        "score": 8,
-        "recommendation": "اللون البرتقالي يدل على بيئة حمضية طبيعية. لا يوجد مؤشر على التهاب."
-    },
-    "light_olive": {
-        "name": "زيتي فاتح",
-        "hsv_center": [55, 35, 70],
-        "ph": "~7.0",
-        "ph_label": "متعادل",
-        "status": "normal",
-        "level": "الجرح سليم",
-        "score": 5,
-        "recommendation": "اللون الزيتي الفاتح يدل على بيئة متعادلة. الجرح في حالة طبيعية."
-    },
-    "dark_olive": {
-        "name": "زيتي غامق",
-        "hsv_center": [55, 60, 40],
-        "ph": "~8.0",
-        "ph_label": "قاعدي",
-        "status": "warning",
-        "level": "جرح ملتهب",
-        "score": 60,
-        "recommendation": "اللون الزيتي الغامق يشير إلى بيئة قاعدية واحتمال وجود التهاب. يُنصح باستشارة الطبيب."
-    },
-    "dark_green": {
-        "name": "أخضر داكن",
-        "hsv_center": [95, 70, 35],
-        "ph": "~9.0",
-        "ph_label": "قاعدي شديد",
-        "status": "critical",
-        "level": "التهاب مزمن حاد",
-        "score": 92,
-        "recommendation": "اللون الأخضر الداكن يدل على بيئة قاعدية شديدة. يستلزم تدخلاً طبياً فورياً."
-    },
-    "black": {
-        "name": "أسود / غير واضح",
-        "hsv_center": [0, 0, 10],
-        "ph": "—",
-        "ph_label": "غير معروف",
-        "status": "unknown",
-        "level": "الصورة غير واضحة",
-        "score": 0,
-        "recommendation": "الصورة معتمة جداً أو غير واضحة. يرجى التصوير بإضاءة كافية."
-    }
-}
 
-def get_dominant_color_hsv(image_bytes):
-    """استخراج اللون المهيمن باستخدام K-Means (سريع ودقيق)"""
-    # تحويل الصورة إلى OpenCV
-    nparr = np.frombuffer(image_bytes, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    
-    if img is None:
-        # محاولة عن طريق PIL
-        pil_img = Image.open(io.BytesIO(image_bytes))
-        pil_img = pil_img.convert('RGB')
-        img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-    
-    # تقليص الحجم لتسريع المعالجة
-    height, width = img.shape[:2]
-    new_size = (400, int(400 * height / width)) if width > 400 else (width, height)
-    img = cv2.resize(img, new_size, interpolation=cv2.INTER_AREA)
-    
-    # أخذ المنطقة المركزية فقط (مكان الجرح)
-    h, w = img.shape[:2]
-    center = img[int(h*0.2):int(h*0.8), int(w*0.2):int(w*0.8)]
-    
-    # تحويل إلى RGB لسهولة التحليل
-    center_rgb = cv2.cvtColor(center, cv2.COLOR_BGR2RGB)
-    pixels = center_rgb.reshape(-1, 3)
-    
-    # استخدام K-Means لتجميع الألوان (3 ألوان مهيمنة كحد أقصى)
-    if len(pixels) > 500:
-        kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
-        kmeans.fit(pixels)
-        colors = kmeans.cluster_centers_.astype(int)
-        
-        # حساب نسب كل لون
-        labels = kmeans.labels_
-        counts = np.bincount(labels)
-        percentages = counts / len(labels)
-    else:
-        # لو الصورة صغيرة جداً
-        colors = [np.mean(pixels, axis=0).astype(int)]
-        percentages = [1.0]
-    
-    # تحويل الألوان إلى HSV
-    dominant_hsv = []
-    for i, color in enumerate(colors):
-        r, g, b = color
-        h, s, v = colorsys.rgb_to_hsv(r/255, g/255, b/255)
-        dominant_hsv.append({
-            "rgb": [r, g, b],
-            "hsv": [h*360, s*100, v*100],
-            "percentage": percentages[i]
-        })
-    
-    return dominant_hsv
+def preprocess_image(img):
+    try:
+        img.thumbnail((600, 600), Image.Resampling.LANCZOS)
+        img = ImageEnhance.Contrast(img).enhance(1.1)
+        img = ImageEnhance.Sharpness(img).enhance(1.1)
+        return img
+    except Exception as e:
+        logger.error(f"خطأ في معالجة الصورة: {e}")
+        return img
 
-def classify_color(hsv_values):
-    """تصنيف اللون بناءً على أقرب مركز لوني"""
-    h, s, v = hsv_values
-    
-    best_match = None
-    best_distance = float('inf')
-    
-    for color_key, color_info in COLOR_MAP.items():
-        center_h, center_s, center_v = color_info["hsv_center"]
-        
-        # حساب المسافة (Hue له وزن أكبر لأنه أهم للون)
-        h_diff = min(abs(h - center_h), 360 - abs(h - center_h))
-        s_diff = abs(s - center_s)
-        v_diff = abs(v - center_v)
-        
-        # أوزان مختلفة: Hue 50%، Saturation 25%، Value 25%
-        distance = (h_diff * 0.5) + (s_diff * 0.25) + (v_diff * 0.25)
-        
-        if distance < best_distance:
-            best_distance = distance
-            best_match = color_key
-    
-    # لو الأسود (قيمة V قليلة جداً)
-    if v < 15:
-        best_match = "black"
-        best_match = "black"
-    
-    return best_match, best_distance
 
 def analyze_wound_color(image_bytes):
     try:
-        # استخراج الألوان المهيمنة
-        dominant_colors = get_dominant_color_hsv(image_bytes)
-        
-        # اختيار اللون صاحب أكبر نسبة
-        main_color = max(dominant_colors, key=lambda x: x["percentage"])
-        h, s, v = main_color["hsv"]
-        
-        logger.info(f"اللون المهيمن: H={h:.1f}, S={s:.1f}, V={v:.1f}, نسبة={main_color['percentage']:.1%}")
-        
-        # تصنيف اللون
-        color_key, confidence = classify_color([h, s, v])
-        color_info = COLOR_MAP[color_key]
-        
-        # حساب مصفوفة النسبة المئوية للثقة (على أساس المسافة)
-        confidence_percent = max(0, min(100, int(100 - (confidence * 1.5))))
-        if confidence_percent < 30:
-            confidence_percent = 30
-        
-        # بناء النتيجة
-        result = {
-            "status": color_info["status"],
-            "level": color_info["level"],
-            "ph_range": color_info["ph"],
-            "ph_label": color_info["ph_label"],
-            "color_detected": color_info["name"],
-            "recommendation": color_info["recommendation"],
-            "emoji": "🟢" if color_info["status"] == "normal" else ("🟡" if color_info["status"] == "warning" else ("🔴" if color_info["status"] == "critical" else "⚪")),
-            "score": color_info["score"],
-            "rgb": {"r": int(main_color["rgb"][0]), "g": int(main_color["rgb"][1]), "b": int(main_color["rgb"][2])},
-            "hsv": {"h": round(h, 1), "s": round(s, 1), "v": round(v, 1)},
-            "confidence": round(confidence_percent)
+        img = None
+
+        try:
+            img = Image.open(io.BytesIO(image_bytes))
+            logger.info("تم فتح الصورة بنجاح")
+        except Exception as e:
+            logger.error(f"فشل فتح الصورة: {e}")
+            try:
+                if isinstance(image_bytes, str):
+                    image_bytes = image_bytes.encode('utf-8')
+                img_data = re.search(b'base64,(.*)', image_bytes)
+                if img_data:
+                    image_bytes = base64.b64decode(img_data.group(1))
+                    img = Image.open(io.BytesIO(image_bytes))
+            except:
+                pass
+
+        if img is None:
+            raise Exception("لا يمكن قراءة الصورة")
+
+        img = preprocess_image(img)
+
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+
+        width, height = img.size
+        cx, cy = width // 2, height // 2
+        cs = min(width, height) // 3
+
+        region = img.crop((
+            max(0, cx - cs), max(0, cy - cs),
+            min(width, cx + cs), min(height, cy + cs)
+        ))
+        region = region.resize((100, 100))
+        pixels = list(region.getdata())
+
+        # ====================================================================
+        # تحليل كل بكسل على حدة وعدّ النسب
+        # ====================================================================
+
+        counts = {
+            "orange":      0,   # برتقالي   → حمضي / لا التهاب (pH ~5)
+            "light_olive": 0,   # زيتي فاتح → متعادل / سليم   (pH ~7)
+            "dark_olive":  0,   # زيتي غامق → جرح ملتهب       (pH ~8)
+            "dark_green":  0,   # أخضر داكن → التهاب مزمن حاد (pH ~9)
         }
-        
+
+        for pr, pg, pb in pixels:
+            h, s, v = colorsys.rgb_to_hsv(pr / 255, pg / 255, pb / 255)
+            hue = h * 360
+
+            # 🟠 برتقالي
+            if 15 <= hue <= 35:
+                counts["orange"] += 1
+
+            # 🫒 زيتي فاتح / غامق
+            elif 40 <= hue <= 70:
+                if s < 0.5:
+                    if v > 0.6:
+                        counts["light_olive"] += 1
+                    else:
+                        counts["dark_olive"] += 1
+
+            # 🌲 أخضر داكن
+            elif 70 <= hue <= 140 and v < 0.5:
+                counts["dark_green"] += 1
+
+        total = len(pixels)
+        ratios = {k: counts[k] / total for k in counts}
+
+        logger.info(f"نسب الألوان: برتقالي={ratios['orange']:.3f}, "
+                    f"زيتي فاتح={ratios['light_olive']:.3f}, "
+                    f"زيتي غامق={ratios['dark_olive']:.3f}, "
+                    f"أخضر داكن={ratios['dark_green']:.3f}")
+
+        winner = max(ratios, key=ratios.get)
+        max_ratio = ratios[winner]
+
+        # حساب RGB تقريبي للمنطقة (للإبلاغ فقط)
+        arr = np.array(region)
+        avg_r = float(np.mean(arr[:, :, 0]))
+        avg_g = float(np.mean(arr[:, :, 1]))
+        avg_b = float(np.mean(arr[:, :, 2]))
+
+        # حالة طوارئ: إذا لم يُصنَّف أي بكسل
+        if max_ratio == 0:
+            h_avg, s_avg, v_avg = colorsys.rgb_to_hsv(avg_r / 255, avg_g / 255, avg_b / 255)
+            hue_avg = h_avg * 360
+            rg_ratio = avg_r / avg_g if avg_g > 0 else 1.0
+            if rg_ratio > 1.30 or hue_avg < 40:
+                winner = "orange"
+            elif hue_avg > 90 or rg_ratio < 0.95:
+                winner = "dark_green"
+            elif s_avg * 100 < 12 and v_avg * 100 < 55:
+                winner = "dark_olive"
+            else:
+                winner = "light_olive"
+
+        # ── إرجاع النتيجة ────────────────────────────────────────────────
+        if winner == "dark_green":
+            result = {
+                "status": "critical",
+                "level": "التهاب مزمن حاد",
+                "ph_range": "~9.0",
+                "ph_label": "قاعدي شديد",
+                "color_detected": "أخضر داكن",
+                "recommendation": (
+                    "اللون الأخضر الداكن يدل على بيئة قاعدية شديدة. "
+                    "يستلزم هذا تدخلاً طبياً فورياً ومراجعة متخصص."
+                ),
+                "emoji": "🔴",
+                "score": 92,
+            }
+        elif winner == "dark_olive":
+            result = {
+                "status": "warning",
+                "level": "جرح ملتهب",
+                "ph_range": "~8.0",
+                "ph_label": "قاعدي",
+                "color_detected": "زيتي غامق",
+                "recommendation": (
+                    "اللون الزيتي الغامق يشير إلى بيئة قاعدية واحتمال وجود التهاب. "
+                    "يُنصح باستشارة الطاقم الطبي لتقييم حالة الجرح."
+                ),
+                "emoji": "🟡",
+                "score": 60,
+            }
+        elif winner == "orange":
+            result = {
+                "status": "normal",
+                "level": "لا يوجد التهاب",
+                "ph_range": "~5.0",
+                "ph_label": "حمضي",
+                "color_detected": "برتقالي",
+                "recommendation": (
+                    "اللون البرتقالي يدل على بيئة حمضية طبيعية. "
+                    "لا يوجد مؤشر على التهاب — يُستخدم كمرجع للمقارنة."
+                ),
+                "emoji": "🟢",
+                "score": 8,
+            }
+        else:  # light_olive
+            result = {
+                "status": "normal",
+                "level": "الجرح سليم",
+                "ph_range": "~7.0",
+                "ph_label": "متعادل",
+                "color_detected": "زيتي فاتح",
+                "recommendation": (
+                    "اللون الزيتي الفاتح يدل على بيئة متعادلة. "
+                    "لا يوجد مؤشر على التهاب — الجرح في حالة طبيعية."
+                ),
+                "emoji": "🟢",
+                "score": 5,
+            }
+
+        h_final, s_final, v_final = colorsys.rgb_to_hsv(avg_r / 255, avg_g / 255, avg_b / 255)
+        result["rgb"] = {"r": round(avg_r), "g": round(avg_g), "b": round(avg_b)}
+        result["hsv"] = {"h": round(h_final * 360, 1), "s": round(s_final * 100, 1), "v": round(v_final * 100, 1)}
         return result
-        
+
     except Exception as e:
         logger.error(f"خطأ في تحليل الصورة: {e}")
         return {
@@ -202,42 +206,45 @@ def analyze_wound_color(image_bytes):
             "ph_range": "—",
             "ph_label": "غير معروف",
             "color_detected": "خطأ",
-            "recommendation": f"حدث خطأ: {str(e)}. تأكد من الصورة.",
+            "recommendation": f"حدث خطأ: {str(e)}. تأكد من الصيغة المدعومة.",
             "emoji": "❌",
             "score": 0,
             "rgb": {"r": 0, "g": 0, "b": 0},
             "hsv": {"h": 0, "s": 0, "v": 0},
         }
 
+
 @app.route("/")
 def index():
     return render_template("index.html")
+
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
     try:
         if "image" not in request.files:
             return jsonify({"error": "لم يتم إرسال صورة"}), 400
-        
+
         file = request.files["image"]
-        
+
         if file.filename == '':
             return jsonify({"error": "لم يتم اختيار صورة"}), 400
-        
+
         image_bytes = file.read()
-        
+
         if len(image_bytes) == 0:
             return jsonify({"error": "الملف فارغ"}), 400
-        
+
         if len(image_bytes) > 5 * 1024 * 1024:
             return jsonify({"error": "الصورة كبيرة جداً. الحد الأقصى 5 ميجابايت"}), 400
-        
+
         result = analyze_wound_color(image_bytes)
         return jsonify(result)
-        
+
     except Exception as e:
         logger.error(f"خطأ في المعالجة: {e}")
         return jsonify({"error": f"حدث خطأ: {str(e)}"}), 500
+
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
