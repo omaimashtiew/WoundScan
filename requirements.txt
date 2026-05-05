@@ -19,7 +19,6 @@ opencv-python==4.13.0.92
 packaging==25.0
 pandas==2.3.3
 pillow==12.1.1
-pillow-heif==0.13.1
 pyparsing==3.2.5
 python-dateutil==2.9.0.post0
 pytz==2025.2
