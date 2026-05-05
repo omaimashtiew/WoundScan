@@ -193,8 +193,9 @@ def analyze_wound_color(image_bytes):
                 "score": 5,
             }
 
+        h_final, s_final, v_final = colorsys.rgb_to_hsv(avg_r / 255, avg_g / 255, avg_b / 255)
         result["rgb"] = {"r": round(avg_r), "g": round(avg_g), "b": round(avg_b)}
-        result["hsv"] = {"h": round(hue, 1), "s": round(sat, 1), "v": round(val, 1)}
+        result["hsv"] = {"h": round(h_final * 360, 1), "s": round(s_final * 100, 1), "v": round(v_final * 100, 1)}
         return result
 
     except Exception as e:
