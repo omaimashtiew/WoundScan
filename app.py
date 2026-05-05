@@ -71,102 +71,66 @@ def analyze_wound_color(image_bytes):
             min(width, cx + cs), min(height, cy + cs)
         ))
         region = region.resize((100, 100))
-        arr = np.array(region)
+        pixels = list(region.getdata())
 
+        # ====================================================================
+        # تحليل كل بكسل على حدة وعدّ النسب
+        # ====================================================================
+
+        counts = {
+            "orange":      0,   # برتقالي   → حمضي / لا التهاب (pH ~5)
+            "light_olive": 0,   # زيتي فاتح → متعادل / سليم   (pH ~7)
+            "dark_olive":  0,   # زيتي غامق → جرح ملتهب       (pH ~8)
+            "dark_green":  0,   # أخضر داكن → التهاب مزمن حاد (pH ~9)
+        }
+
+        for pr, pg, pb in pixels:
+            h, s, v = colorsys.rgb_to_hsv(pr / 255, pg / 255, pb / 255)
+            hue = h * 360
+
+            # 🟠 برتقالي
+            if 15 <= hue <= 35:
+                counts["orange"] += 1
+
+            # 🫒 زيتي فاتح / غامق
+            elif 40 <= hue <= 70:
+                if s < 0.5:
+                    if v > 0.6:
+                        counts["light_olive"] += 1
+                    else:
+                        counts["dark_olive"] += 1
+
+            # 🌲 أخضر داكن
+            elif 70 <= hue <= 140 and v < 0.5:
+                counts["dark_green"] += 1
+
+        total = len(pixels)
+        ratios = {k: counts[k] / total for k in counts}
+
+        logger.info(f"نسب الألوان: برتقالي={ratios['orange']:.3f}, "
+                    f"زيتي فاتح={ratios['light_olive']:.3f}, "
+                    f"زيتي غامق={ratios['dark_olive']:.3f}, "
+                    f"أخضر داكن={ratios['dark_green']:.3f}")
+
+        winner = max(ratios, key=ratios.get)
+        max_ratio = ratios[winner]
+
+        # حساب RGB تقريبي للمنطقة (للإبلاغ فقط)
+        arr = np.array(region)
         avg_r = float(np.mean(arr[:, :, 0]))
         avg_g = float(np.mean(arr[:, :, 1]))
         avg_b = float(np.mean(arr[:, :, 2]))
 
-        h, s, v = colorsys.rgb_to_hsv(avg_r / 255, avg_g / 255, avg_b / 255)
-        hue = h * 360
-        sat = s * 100
-        val = v * 100
-
-        rg_ratio = avg_r / avg_g if avg_g > 0 else 1.0
-
-        logger.info(f"RGB=({avg_r:.0f},{avg_g:.0f},{avg_b:.0f}) "
-                    f"HSV=({hue:.1f}deg,{sat:.1f}%,{val:.1f}%) "
-                    f"R/G={rg_ratio:.3f}")
-
-        # ====================================================================
-        # نظام النقاط المُصحَّح
-        # ====================================================================
-
-        score_dark_green = 0   # أخضر داكن  → التهاب مزمن حاد (pH ~9)
-        score_dark_olive  = 0  # زيتي غامق  → جرح ملتهب (pH ~8)
-        score_light_olive = 0  # زيتي فاتح  → متعادل / سليم (pH ~7)
-        score_orange      = 0  # برتقالي    → حمضي / لا التهاب (pH ~5)
-
-        # ── 1. أخضر داكن ──────────────────────────────────────────────────
-        # hue عالٍ جداً (>90)، تشبع منخفض جداً، R/G أقل من 0.95
-        if hue > 90:
-            score_dark_green += 70
-        if rg_ratio < 0.95:
-            score_dark_green += 55
-        if sat < 8:
-            score_dark_green += 35
-        if val < 40:
-            score_dark_green += 25
-
-        # ── 2. زيتي غامق (ملتهب) ─────────────────────────────────────────
-        # hue متوسط (50-90)، تشبع منخفض جداً (<12%)، سطوع منخفض-متوسط (<55)
-        if 50 <= hue <= 90:
-            score_dark_olive += 35
-        if sat < 12:                      # ← المفتاح الرئيسي للزيتي الغامق
-            score_dark_olive += 60
-        if 0.92 <= rg_ratio <= 1.08:
-            score_dark_olive += 20
-        if val < 55:
-            score_dark_olive += 25
-
-        # منع الزيتي الغامق من الفوز على الزيتي الفاتح عندما السطوع عالٍ
-        if val > 60:
-            score_dark_olive -= 40
-
-        # ── 3. زيتي فاتح (سليم / متعادل) ───────────────────────────────
-        # hue متوسط (50-90)، تشبع متوسط (12-40%)، سطوع عالٍ (>55)
-        if 50 <= hue <= 90:
-            score_light_olive += 30
-        if 12 <= sat <= 40:               # ← المفتاح الرئيسي للزيتي الفاتح
-            score_light_olive += 65
-        if 1.00 <= rg_ratio <= 1.25:
-            score_light_olive += 20
-        if val > 55:                      # ← سطوع عالٍ يميّزه عن الغامق
-            score_light_olive += 40
-        if sat > 20:                      # تشبع واضح يقوّي التصنيف
-            score_light_olive += 15
-
-        # ── 4. برتقالي (حمضي) ────────────────────────────────────────────
-        # hue منخفض (<50)، R/G مرتفع (>1.25)، تشبع مرتفع (>30)
-        if rg_ratio > 1.30:
-            score_orange += 65
-        if hue < 45:
-            score_orange += 50
-        if sat > 30:
-            score_orange += 25
-        if 25 <= hue <= 45:
-            score_orange += 20
-
-        logger.info(f"النقاط: أخضر داكن={score_dark_green}, زيتي غامق={score_dark_olive}, "
-                    f"زيتي فاتح={score_light_olive}, برتقالي={score_orange}")
-
-        scores = {
-            "dark_green":  score_dark_green,
-            "dark_olive":  score_dark_olive,
-            "light_olive": score_light_olive,
-            "orange":      score_orange,
-        }
-
-        winner = max(scores, key=scores.get)
-        max_score = max(scores.values())
-
-        # حالة طوارئ: إذا كانت جميع النقاط صفر
-        if max_score == 0:
-            if rg_ratio > 1.30 or hue < 40:
+        # حالة طوارئ: إذا لم يُصنَّف أي بكسل
+        if max_ratio == 0:
+            h_avg, s_avg, v_avg = colorsys.rgb_to_hsv(avg_r / 255, avg_g / 255, avg_b / 255)
+            hue_avg = h_avg * 360
+            rg_ratio = avg_r / avg_g if avg_g > 0 else 1.0
+            if rg_ratio > 1.30 or hue_avg < 40:
                 winner = "orange"
-            elif hue > 90 or rg_ratio < 0.95:
+            elif hue_avg > 90 or rg_ratio < 0.95:
                 winner = "dark_green"
-            elif sat < 12 and val < 55:
+            elif s_avg * 100 < 12 and v_avg * 100 < 55:
                 winner = "dark_olive"
             else:
                 winner = "light_olive"
